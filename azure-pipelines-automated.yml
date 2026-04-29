@@ -20,7 +20,7 @@ variables:
   appServicePlan: 'reactplan-automated'
   appName: 'react-automated-sanket'
   sku: 'F1'
-  runtime: 'NODE|18-lts'
+  runtime: 'NODE|20-lts'
 
 stages:
 

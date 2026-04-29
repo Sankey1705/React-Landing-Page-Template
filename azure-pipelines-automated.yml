@@ -1,0 +1,165 @@
+# ============================================================
+# Sanket's Fully Automated Pipeline
+# DevOps Project : ReactAutomated
+# YAML File      : azure-pipelines-automated.yml
+# Owner          : Sanket Wadbudhe
+# Trigger        : Manual only
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  nodeVersion: '18.x'
+  azureSubscription: 'AzureServiceConnection'
+  resourceGroup: 'automated-uc1'
+  location: 'canadacentral'
+  appServicePlan: 'reactplan-automated'
+  appName: 'react-automated-sanket'
+  sku: 'F1'
+  runtime: 'NODE|18-lts'
+
+stages:
+
+- stage: Infrastructure
+  displayName: 'Stage 1 - Create Azure Infrastructure'
+  jobs:
+  - job: CreateInfra
+    displayName: 'Create RG, Plan and Web App'
+    steps:
+
+    - task: AzureCLI@2
+      displayName: 'Step 1 - Create Resource Group'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Creating Resource Group..."
+          az group create \
+            --name $(resourceGroup) \
+            --location $(location) \
+            --output none
+          echo "DONE: RG = $(resourceGroup)"
+
+    - task: AzureCLI@2
+      displayName: 'Step 2 - Create App Service Plan'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Creating App Service Plan..."
+          az appservice plan create \
+            --name $(appServicePlan) \
+            --resource-group $(resourceGroup) \
+            --location $(location) \
+            --sku $(sku) \
+            --is-linux \
+            --output none
+          echo "DONE: Plan = $(appServicePlan)"
+
+    - task: AzureCLI@2
+      displayName: 'Step 3 - Create Web App'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Creating Web App..."
+          az webapp create \
+            --name $(appName) \
+            --resource-group $(resourceGroup) \
+            --plan $(appServicePlan) \
+            --runtime "$(runtime)" \
+            --output none
+          echo "DONE: Web App = $(appName)"
+
+    - task: AzureCLI@2
+      displayName: 'Step 4 - Set React Startup Command'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Setting startup command..."
+          az webapp config set \
+            --name $(appName) \
+            --resource-group $(resourceGroup) \
+            --startup-file \
+            "pm2 serve /home/site/wwwroot --no-daemon --spa --port 8080" \
+            --output none
+          echo "DONE: Startup command set"
+
+    - task: AzureCLI@2
+      displayName: 'Step 5 - Print Live App URL'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineSheet: |
+          URL=$(az webapp show \
+            --name $(appName) \
+            --resource-group $(resourceGroup) \
+            --query defaultHostName \
+            --output tsv)
+          echo "============================================"
+          echo "YOUR LIVE APP URL: https://$URL"
+          echo "============================================"
+
+- stage: Build
+  displayName: 'Stage 2 - Build React App'
+  dependsOn: Infrastructure
+  jobs:
+  - job: BuildJob
+    displayName: 'npm ci and npm run build'
+    steps:
+
+    - task: UseNode@1
+      displayName: 'Install Node 18'
+      inputs:
+        version: '$(nodeVersion)'
+
+    - script: |
+        npm ci
+        npm run build
+      displayName: 'Install and build'
+
+    - task: CopyFiles@2
+      displayName: 'Copy build to staging'
+      inputs:
+        sourceFolder: '$(System.DefaultWorkingDirectory)/build'
+        contents: '**'
+        targetFolder: '$(Build.ArtifactStagingDirectory)'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish artifact drop'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'drop'
+
+- stage: Deploy
+  displayName: 'Stage 3 - Deploy to App Service'
+  dependsOn: Build
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy React App'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            displayName: 'Deploy to Azure App Service'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              appType: 'webAppLinux'
+              appName: '$(appName)'
+              package: '$(Pipeline.Workspace)/drop'
+              runtimeStack: 'NODE|18-lts'
+              startUpCommand: >
+                pm2 serve /home/site/wwwroot
+                --no-daemon --spa --port 8080

@@ -12,8 +12,8 @@ set -e
 
 SUBSCRIPTION_ID="f77da30d-94bf-42b9-927b-f13138521761"
 RESOURCE_GROUP="Usecase-1"
-LOCATION_APP="centralus"
-LOCATION_STORAGE="eastus"
+LOCATION_APP="centralindia"
+LOCATION_STORAGE="centralindia"
 PLAN_NAME="reactplan"
 APP_NAME="react-landing-page"
 RUNTIME="NODE:18-lts"

@@ -1,10 +1,3 @@
-# ============================================================
-# Sanket's Fully Automated Pipeline
-# DevOps Project : ReactAutomated
-# YAML File      : azure-pipelines-automated.yml
-# Owner          : Sanket Wadbudhe
-# Trigger        : Manual only
-# ============================================================
 
 trigger: none
 pr: none
@@ -100,7 +93,7 @@ stages:
         azureSubscription: '$(azureSubscription)'
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
-        inlineSheet: |
+        inlineScript: |
           URL=$(az webapp show \
             --name $(appName) \
             --resource-group $(resourceGroup) \

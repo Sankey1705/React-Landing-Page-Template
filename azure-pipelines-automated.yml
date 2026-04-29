@@ -1,3 +1,10 @@
+# ============================================================
+# Sanket's Fully Automated Pipeline
+# DevOps Project : ReactAutomated
+# YAML File      : azure-pipelines-automated.yml
+# Owner          : Sanket Wadbudhe
+# Trigger        : Manual only
+# ============================================================
 
 trigger: none
 pr: none
@@ -17,6 +24,7 @@ variables:
 
 stages:
 
+# ─── STAGE 1: INFRASTRUCTURE ────────────────────────────────
 - stage: Infrastructure
   displayName: 'Stage 1 - Create Azure Infrastructure'
   jobs:
@@ -45,15 +53,25 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
-          echo "Creating App Service Plan..."
-          az appservice plan create \
+          echo "Checking App Service Plan..."
+          PLAN_EXISTS=$(az appservice plan show \
             --name $(appServicePlan) \
             --resource-group $(resourceGroup) \
-            --location $(location) \
-            --sku $(sku) \
-            --is-linux \
-            --output none
-          echo "DONE: Plan = $(appServicePlan)"
+            --query name \
+            --output tsv 2>/dev/null || echo "")
+          if [ -z "$PLAN_EXISTS" ]; then
+            echo "Creating App Service Plan..."
+            az appservice plan create \
+              --name $(appServicePlan) \
+              --resource-group $(resourceGroup) \
+              --location $(location) \
+              --sku $(sku) \
+              --is-linux \
+              --output none
+            echo "DONE: Plan created = $(appServicePlan)"
+          else
+            echo "SKIP: Plan already exists = $(appServicePlan)"
+          fi
 
     - task: AzureCLI@2
       displayName: 'Step 3 - Create Web App'
@@ -62,14 +80,24 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
-          echo "Creating Web App..."
-          az webapp create \
+          echo "Checking Web App..."
+          APP_EXISTS=$(az webapp show \
             --name $(appName) \
             --resource-group $(resourceGroup) \
-            --plan $(appServicePlan) \
-            --runtime "$(runtime)" \
-            --output none
-          echo "DONE: Web App = $(appName)"
+            --query name \
+            --output tsv 2>/dev/null || echo "")
+          if [ -z "$APP_EXISTS" ]; then
+            echo "Creating Web App..."
+            az webapp create \
+              --name $(appName) \
+              --resource-group $(resourceGroup) \
+              --plan $(appServicePlan) \
+              --runtime "$(runtime)" \
+              --output none
+            echo "DONE: Web App created = $(appName)"
+          else
+            echo "SKIP: Web App already exists = $(appName)"
+          fi
 
     - task: AzureCLI@2
       displayName: 'Step 4 - Set React Startup Command'
@@ -94,6 +122,7 @@ stages:
         scriptType: 'bash'
         scriptLocation: 'inlineScript'
         inlineScript: |
+          echo "Fetching live URL..."
           URL=$(az webapp show \
             --name $(appName) \
             --resource-group $(resourceGroup) \
@@ -103,9 +132,11 @@ stages:
           echo "YOUR LIVE APP URL: https://$URL"
           echo "============================================"
 
+# ─── STAGE 2: BUILD ─────────────────────────────────────────
 - stage: Build
   displayName: 'Stage 2 - Build React App'
   dependsOn: Infrastructure
+  condition: succeeded()
   jobs:
   - job: BuildJob
     displayName: 'npm ci and npm run build'
@@ -134,9 +165,11 @@ stages:
         pathToPublish: '$(Build.ArtifactStagingDirectory)'
         artifactName: 'drop'
 
+# ─── STAGE 3: DEPLOY ────────────────────────────────────────
 - stage: Deploy
   displayName: 'Stage 3 - Deploy to App Service'
   dependsOn: Build
+  condition: succeeded()
   jobs:
   - deployment: DeployJob
     displayName: 'Deploy React App'
